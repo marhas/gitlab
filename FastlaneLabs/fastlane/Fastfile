@@ -1,0 +1,61 @@
+default_platform(:ios)
+
+platform :ios do
+
+  desc "Creates a release branch from the current master and then bumps the minor number of the master branch and finally comits and pushes the changes."
+  lane :bump_and_branch do
+    project_version = get_version_number(target: "FastlaneLabs")
+    rc_branch_name = "releases/#{project_version}"
+    release_branch_already_exists = sh("if $(git branch -r |grep -q #{rc_branch_name}); then echo true; else echo false; fi").strip
+    puts("already exists: \"#{release_branch_already_exists}\"")
+    if release_branch_already_exists != "false"
+      UI.error("Branch #{rc_branch_name} already exists - exiting.")
+      next
+    end
+
+    UI.message("Creating release candidate branch #{rc_branch_name}")
+
+    push_to_git_remote(
+      local_branch: "master",
+      remote_branch: "#{rc_branch_name}",
+      force: false,
+      force_with_lease: false,
+      tags: false,
+      no_verify: true,
+      set_upstream: false
+    )
+
+    new_project_version = bump_project_version(type: "minor")
+
+    UI.message("Bumping master to #{new_project_version}")
+    commit_version_bump(
+      message: "Bumped project version to #{new_project_version}"
+    )
+    push_to_git_remote(
+      remote_branch: "master",
+      force: false,
+      force_with_lease: false,
+      tags: false,
+      no_verify: true,
+      set_upstream: false
+    )
+  end
+
+  desc "Displays the current project version number"
+  lane :show_project_version do
+    project_version_number = get_version_number(target: "FastlaneLabs")
+    UI.success("Current project version: #{project_version_number}")
+  end
+
+  desc "Bumps the project version number. Defaults to bumping the patch number, use 'type:minor' or 'type:major' to override. Use version parameter to set the version number explicitly, eg: version: 12.1.2. If version parameter is used, type is ignored."
+  lane :bump_project_version do |options|
+    params = {}
+    if options[:version]
+      params[:version_number] = options[:version]
+    else
+      params[:bump_type] = options[:type] || 'patch'
+    end
+    new_version_number = increment_version_number(params)
+  end
+
+end
